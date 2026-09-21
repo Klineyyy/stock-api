@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint and test (PHP 8.4, PostgreSQL 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: stock_api_test
+          POSTGRES_USER: stock
+          POSTGRES_PASSWORD: stock
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U stock -d stock_api_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_USERNAME: stock
+      DB_PASSWORD: stock
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo_pgsql, bcmath, pcntl, zip
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare the app
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Code style (Pint)
+        run: vendor/bin/pint --test
+
+      # includes the concurrency tests, which start ten real PHP processes against PostgreSQL
+      - name: Tests
+        run: php artisan test
+
+  docker:
+    name: Docker image starts and answers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the stack (docker compose up)
+        run: docker compose up -d --build
+
+      - name: Wait for the API, sign in, and check the demo data
+        run: |
+          for _ in $(seq 1 60); do
+            curl -fsS http://localhost:8000/up >/dev/null 2>&1 && break
+            sleep 2
+          done
+          token=$(curl -fsS -X POST http://localhost:8000/api/v1/auth/login \
+            -H 'Content-Type: application/json' -H 'Accept: application/json' \
+            -d '{"email":"admin@example.com","password":"password"}' | jq -r .access_token)
+          summary=$(curl -fsS http://localhost:8000/api/v1/summary -H "Authorization: Bearer $token")
+          echo "$summary"
+          test "$(echo "$summary" | jq -c .data)" = '{"items":12,"units_on_hand":410,"low_stock":5}'
+          curl -fsS http://localhost:8000/docs/api.json | jq -e '.paths | length > 10' >/dev/null
+
+      - name: Show logs if it failed
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop
+        if: always()
+        run: docker compose down -v

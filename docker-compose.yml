@@ -1,0 +1,61 @@
+# One command to try it:   docker compose up --build
+# Then open http://localhost:8000/docs/api  (the interactive API docs)
+#
+# The keys below are DEMO values, published on purpose so the demo starts with no setup.
+# Generate your own before running this anywhere real:
+#   APP_KEY    php artisan key:generate --show
+#   JWT_SECRET php artisan jwt:secret --show
+
+name: stock-api
+
+x-app-env: &app-env
+  APP_NAME: "Stock API"
+  APP_ENV: local
+  APP_DEBUG: "false"
+  APP_URL: http://localhost:${APP_PORT:-8000}
+  APP_KEY: "base64:yxSLaZB0VTESo7l0A1hSwp2vx0mn8Y/N7TVw3l411qs="
+  JWT_SECRET: "6572d51c1989a544e184463cf4e131211ebf9040f5a9bcc353396ead98da580a"
+  DB_CONNECTION: pgsql
+  DB_HOST: db
+  DB_PORT: "5432"
+  DB_DATABASE: stock_api
+  DB_USERNAME: stock
+  DB_PASSWORD: stock
+  CACHE_STORE: file
+  SESSION_DRIVER: array
+  QUEUE_CONNECTION: sync
+  LOG_CHANNEL: stderr
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: stock_api
+      POSTGRES_USER: stock
+      POSTGRES_PASSWORD: stock
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stock -d stock_api"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *app-env
+    command: >
+      sh -c "php artisan migrate --force &&
+             php artisan db:seed --force &&
+             php artisan serve --host=0.0.0.0 --port=8000"
+    ports:
+      - "${APP_PORT:-8000}:8000"
+
+volumes:
+  db-data:
