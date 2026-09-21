@@ -97,7 +97,7 @@ app/
   Exceptions/ApiException.php    expected errors with a stable code
   Console/Commands/AdjustStock   `php artisan stock:adjust`, same code path as the API
 database/                        migrations, factories, demo seeder
-tests/                           109 tests
+tests/                           113 tests
 ```
 
 Things worth knowing:
@@ -112,7 +112,7 @@ Things worth knowing:
 ## Tests
 
 ```bash
-docker compose run --rm app php artisan test      # 109 tests
+docker compose run --rm app php artisan test      # 113 tests
 docker compose run --rm app vendor/bin/pint --test   # code style
 ```
 
